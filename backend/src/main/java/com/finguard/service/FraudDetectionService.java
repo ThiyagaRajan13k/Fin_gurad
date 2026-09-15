@@ -28,6 +28,12 @@ public class FraudDetectionService {
     @Autowired
     private com.finguard.repository.ShipmentRepository shipmentRepository;
 
+    @Autowired
+    private com.finguard.repository.InvoiceRepository invoiceRepository;
+
+    @Autowired
+    private com.finguard.repository.FinancingRequestItemRepository financingRequestItemRepository;
+
     @Transactional
     public FraudReport generateReport(FinancingRequest detachedRequest) {
         if (fraudReportRepository.existsByFinancingRequestId(detachedRequest.getId())) {
@@ -40,7 +46,7 @@ public class FraudDetectionService {
         report.setReportNumber("FRD-" + System.currentTimeMillis());
         report.setFinancingRequest(request);
 
-        // Rule-based checks (Mocking actual deep verification for now, but following the flow)
+        // Customer & business document verifications
         report.setCustomerVerified(request.getCustomer() != null && request.getCustomer().getGstNumber() != null);
         
         Invoice invoice = null;
@@ -53,18 +59,58 @@ public class FraudDetectionService {
         report.setSalesOrderVerified(order != null && order.getStatus() != OrderStatus.PENDING);
         report.setShipmentVerified(order != null && shipmentRepository.existsBySalesOrderId(order.getId()));
         report.setInvoiceVerified(invoice != null && invoice.getStatus() != InvoiceStatus.DRAFT);
-        report.setDuplicateInvoice(false); // Mock false
-        report.setDuplicateFinancing(false); // Mock false
-        report.setAmountMatched(request.getTotalAmountRequested().compareTo(invoice.getTotalAmount()) <= 0);
+        report.setAmountMatched(invoice != null && request.getTotalAmountRequested().compareTo(invoice.getTotalAmount()) <= 0);
 
-        // Calculate score
+        // Dynamic Duplicate & Cross-Bank Financing Detection
+        boolean isDuplicateFinancing = false;
+        boolean isDuplicateInvoice = false;
+        boolean isCrossBankAttempt = false;
+
+        if (invoice != null) {
+            // Find existing financing requests that included this exact same invoice
+            List<FinancingRequestItem> priorItems = financingRequestItemRepository.findByInvoiceIdAndFinancingRequestIdNot(invoice.getId(), request.getId());
+            if (!priorItems.isEmpty()) {
+                isDuplicateFinancing = true;
+
+                // Cross-bank attempt: check if previous financing was submitted to another bank account/name
+                for (FinancingRequestItem priorItem : priorItems) {
+                    FinancingRequest priorReq = priorItem.getFinancingRequest();
+                    if (priorReq != null) {
+                        String priorBank = priorReq.getBankName() != null ? priorReq.getBankName() : priorReq.getBankAccount();
+                        String currentBank = request.getBankName() != null ? request.getBankName() : request.getBankAccount();
+                        if (priorBank != null && currentBank != null && !priorBank.equalsIgnoreCase(currentBank)) {
+                            isCrossBankAttempt = true;
+                        }
+                    }
+                }
+            }
+
+            // Duplicate invoice check: multiple active invoices sharing the same sales order
+            if (order != null && invoiceRepository.findBySalesOrderId(order.getId()).size() > 1) {
+                isDuplicateInvoice = true;
+            }
+        }
+
+        report.setDuplicateFinancing(isDuplicateFinancing);
+        report.setDuplicateInvoice(isDuplicateInvoice);
+
+        // Calculate score according to flow diagram:
+        // Valid Flow -> Normal (0/100)
+        // Duplicate Financing -> +Score (+50)
+        // Cross-bank Attempt -> +Score (+70)
         int score = 0;
         if (!report.isCustomerVerified()) score += 20;
         if (!report.isSalesOrderVerified()) score += 20;
         if (!report.isShipmentVerified()) score += 15;
         if (!report.isInvoiceVerified()) score += 15;
         if (!report.isAmountMatched()) score += 20;
-        if (report.isDuplicateInvoice() || report.isDuplicateFinancing()) score += 50;
+        if (report.isDuplicateInvoice()) score += 40;
+        
+        if (isCrossBankAttempt) {
+            score += 70; // High severity penalty for cross-institutional double pledge
+        } else if (report.isDuplicateFinancing()) {
+            score += 50; // Critical duplicate financing penalty
+        }
 
         report.setFraudScore(Math.min(score, 100));
 

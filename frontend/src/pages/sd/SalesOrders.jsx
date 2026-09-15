@@ -91,12 +91,17 @@ const SalesOrders = () => {
       };
       
       const response = await createSalesOrder(orderData);
-      if (response.data.success) {
+      if (response.data && (response.data.success || response.status === 200)) {
         fetchOrders();
         handleCloseDialog();
+      } else {
+        const msg = response.data?.message || 'Failed to create sales order';
+        alert('Order creation failed: ' + msg);
       }
     } catch (error) {
       console.error("Failed to create order", error);
+      const errMsg = error.response?.data?.message || error.message || 'Failed to create order';
+      alert('Error creating order: ' + errMsg);
     }
   };
 
@@ -178,10 +183,11 @@ const SalesOrders = () => {
                   <Grid item xs={12} sm={7}>
                     <Autocomplete
                       options={products}
-                      getOptionLabel={(option) => option.name}
+                      getOptionLabel={(option) => option.name ? `${option.name} (₹${option.price})` : ''}
+                      isOptionEqualToValue={(option, val) => option.id === val.id}
                       value={products.find(p => p.id === item.productId) || null}
                       onChange={(e, newValue) => handleItemChange(index, 'productId', newValue ? newValue.id : null)}
-                      renderInput={(params) => <TextField {...params} label="Select Product" />}
+                      renderInput={(params) => <TextField {...params} label="Select Product" fullWidth />}
                     />
                   </Grid>
                   <Grid item xs={8} sm={3}>

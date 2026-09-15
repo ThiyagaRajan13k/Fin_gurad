@@ -39,6 +39,9 @@ public class FinancingRequest {
     @Column(length = 500)
     private String remarks;
 
+    private String bankAccount;
+    private String bankName;
+
     @OneToMany(mappedBy = "financingRequest", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<FinancingRequestItem> items = new ArrayList<>();
 
@@ -107,6 +110,12 @@ public class FinancingRequest {
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+
+    public String getBankAccount() { return bankAccount; }
+    public void setBankAccount(String bankAccount) { this.bankAccount = bankAccount; }
+
+    public String getBankName() { return bankName; }
+    public void setBankName(String bankName) { this.bankName = bankName; }
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }

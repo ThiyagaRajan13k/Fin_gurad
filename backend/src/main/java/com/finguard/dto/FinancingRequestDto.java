@@ -17,6 +17,8 @@ public class FinancingRequestDto {
     private LocalDateTime expectedDisbursementDate;
     private LocalDateTime actualDisbursementDate;
     private String remarks;
+    private String bankAccount;
+    private String bankName;
     private List<FinancingRequestItemDto> items;
     private String riskAssessment;
     private LocalDateTime createdAt;
@@ -63,6 +65,12 @@ public class FinancingRequestDto {
 
     public String getRiskAssessment() { return riskAssessment; }
     public void setRiskAssessment(String riskAssessment) { this.riskAssessment = riskAssessment; }
+
+    public String getBankAccount() { return bankAccount; }
+    public void setBankAccount(String bankAccount) { this.bankAccount = bankAccount; }
+
+    public String getBankName() { return bankName; }
+    public void setBankName(String bankName) { this.bankName = bankName; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

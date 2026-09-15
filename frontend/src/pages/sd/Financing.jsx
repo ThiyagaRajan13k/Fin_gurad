@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Card, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, FormControl, InputLabel, Select } from '@mui/material';
+import { Box, Typography, Card, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, FormControl, InputLabel, Select, Alert, AlertTitle } from '@mui/material';
 import { motion } from 'framer-motion';
-import { FileText, CheckCircle, XCircle } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Landmark, ShieldAlert, Settings } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -16,10 +16,19 @@ const Financing = () => {
   const [newRequest, setNewRequest] = useState({
     customerId: '',
     invoiceId: '',
+    bankAccount: 'HDFC Bank •••• 4821',
+    bankName: 'HDFC Bank',
     tenureDays: 30,
     amountRequested: '',
-    remarks: ''
+    remarks: 'Working capital for raw material purchase'
   });
+
+  const bankAccounts = [
+    { name: 'HDFC Bank', label: 'HDFC Bank •••• 4821', icon: 'HDFC' },
+    { name: 'ICICI Bank', label: 'ICICI Bank •••• 1092', icon: 'ICICI' },
+    { name: 'State Bank of India', label: 'SBI •••• 7734', icon: 'SBI' },
+    { name: 'Axis Bank', label: 'Axis Bank •••• 9210', icon: 'AXIS' }
+  ];
 
   useEffect(() => {
     const fetchRequests = async () => {
@@ -69,6 +78,8 @@ const Financing = () => {
         customerId: newRequest.customerId,
         tenureDays: newRequest.tenureDays,
         remarks: newRequest.remarks,
+        bankAccount: newRequest.bankAccount,
+        bankName: newRequest.bankName,
         items: [
           {
             invoiceId: newRequest.invoiceId,
@@ -78,13 +89,22 @@ const Financing = () => {
       };
       await api.post('/financing', payload);
       setOpenDialog(false);
-      setNewRequest({ customerId: '', invoiceId: '', tenureDays: 30, amountRequested: '', remarks: '' });
+      setNewRequest({
+        customerId: '',
+        invoiceId: '',
+        bankAccount: 'HDFC Bank •••• 4821',
+        bankName: 'HDFC Bank',
+        tenureDays: 30,
+        amountRequested: '',
+        remarks: 'Working capital for raw material purchase'
+      });
       // Refresh list
       const response = await api.get('/financing');
       setRequests(response.data.data);
     } catch (error) {
       console.error('Failed to create financing request', error);
-      alert('Failed to create request');
+      const errMsg = error.response?.data?.message || error.message || 'Failed to create request';
+      alert('Failed to create request: ' + errMsg);
     }
   };
 
@@ -94,11 +114,13 @@ const Financing = () => {
       .flatMap(req => req.items ? req.items.map(item => item.invoiceId) : [])
   );
 
+  // Allow all issued invoices for customer, noting whether already financed so users can test duplicate/cross-bank flow
   const availableInvoices = invoices.filter(inv => 
-    inv.customerId === newRequest.customerId && 
-    inv.status === 'ISSUED' && 
-    !usedInvoiceIds.has(inv.id)
+    !newRequest.customerId || inv.customerId === newRequest.customerId
   );
+
+  const selectedInvoice = invoices.find(i => i.id === newRequest.invoiceId);
+  const isInvoiceAlreadyFinanced = selectedInvoice && usedInvoiceIds.has(selectedInvoice.id);
 
   return (
     <Box component={motion.div} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
@@ -175,11 +197,55 @@ const Financing = () => {
         <DialogTitle>New Financing Request</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={3} mt={2}>
+            {/* Bank Account Selector as seen in user design */}
+            <Box>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
+                <Typography variant="caption" fontWeight="bold" color="text.secondary">
+                  Bank Account *
+                </Typography>
+                <Box display="flex" alignItems="center" gap={0.5} sx={{ color: 'primary.main', cursor: 'pointer', fontSize: '0.75rem' }}>
+                  <Settings size={12} />
+                  <span>Manage linked accounts</span>
+                </Box>
+              </Box>
+              <FormControl fullWidth size="small">
+                <Select
+                  value={newRequest.bankAccount}
+                  onChange={(e) => {
+                    const acc = bankAccounts.find(b => b.label === e.target.value);
+                    setNewRequest({
+                      ...newRequest,
+                      bankAccount: e.target.value,
+                      bankName: acc ? acc.name : 'HDFC Bank'
+                    });
+                  }}
+                  renderValue={(value) => (
+                    <Box display="flex" alignItems="center" gap={1.5}>
+                      <Landmark size={18} style={{ color: '#1976d2' }} />
+                      <Typography variant="body2" fontWeight="500">{value}</Typography>
+                    </Box>
+                  )}
+                >
+                  {bankAccounts.map((acc) => (
+                    <MenuItem key={acc.label} value={acc.label}>
+                      <Box display="flex" alignItems="center" gap={1.5}>
+                        <Landmark size={16} />
+                        <span>{acc.label}</span>
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                Select a linked bank account (linked during your account setup).
+              </Typography>
+            </Box>
+
             <FormControl fullWidth>
-              <InputLabel>Customer</InputLabel>
+              <InputLabel>Customer *</InputLabel>
               <Select
                 value={newRequest.customerId}
-                label="Customer"
+                label="Customer *"
                 onChange={(e) => setNewRequest({ ...newRequest, customerId: e.target.value, invoiceId: '' })}
               >
                 {customers.map((c) => (
@@ -189,26 +255,38 @@ const Financing = () => {
             </FormControl>
 
             <FormControl fullWidth disabled={!newRequest.customerId}>
-              <InputLabel>Invoice to Finance</InputLabel>
+              <InputLabel>Invoice to Finance *</InputLabel>
               <Select
                 value={newRequest.invoiceId}
-                label="Invoice to Finance"
+                label="Invoice to Finance *"
                 onChange={(e) => {
                   const inv = availableInvoices.find(i => i.id === e.target.value);
                   setNewRequest({ ...newRequest, invoiceId: e.target.value, amountRequested: inv ? inv.totalAmount : '' });
                 }}
               >
-                {availableInvoices.length === 0 && <MenuItem disabled value="">No issued invoices available</MenuItem>}
-                {availableInvoices.map((inv) => (
-                  <MenuItem key={inv.id} value={inv.id}>
-                    {inv.invoiceNumber} - ₹{inv.totalAmount}
-                  </MenuItem>
-                ))}
+                {availableInvoices.length === 0 && <MenuItem disabled value="">No invoices found for this customer</MenuItem>}
+                {availableInvoices.map((inv) => {
+                  const isFinanced = usedInvoiceIds.has(inv.id);
+                  return (
+                    <MenuItem key={inv.id} value={inv.id}>
+                      <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
+                        <span>{inv.invoiceNumber} | ₹{inv.totalAmount?.toLocaleString()} | {inv.customerName || 'Customer'}</span>
+                        {isFinanced && (
+                          <Chip label="Already Financed" size="small" color="warning" sx={{ ml: 1, height: 20, fontSize: '0.65rem' }} />
+                        )}
+                      </Box>
+                    </MenuItem>
+                  );
+                })}
               </Select>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                <ShieldAlert size={14} color="#1976d2" />
+                Select an invoice. Submitting an already-financed invoice triggers duplicate/cross-bank fraud verification.
+              </Typography>
             </FormControl>
 
             <TextField
-              label="Amount Requested (₹)"
+              label="Amount Requested (₹) *"
               type="number"
               fullWidth
               value={newRequest.amountRequested}
@@ -217,7 +295,7 @@ const Financing = () => {
             />
 
             <TextField
-              label="Tenure (Days)"
+              label="Tenure (Days) *"
               type="number"
               fullWidth
               value={newRequest.tenureDays}
@@ -231,7 +309,22 @@ const Financing = () => {
               rows={2}
               value={newRequest.remarks}
               onChange={(e) => setNewRequest({ ...newRequest, remarks: e.target.value })}
+              placeholder="Working capital for raw material purchase"
             />
+
+            {/* Warning banner matching user mock */}
+            <Alert 
+              severity="warning" 
+              icon={<ShieldAlert size={20} />}
+              sx={{ 
+                backgroundColor: 'rgba(237, 108, 2, 0.08)',
+                border: '1px solid rgba(237, 108, 2, 0.3)',
+                borderRadius: 2,
+                fontSize: '0.8rem'
+              }}
+            >
+              If an invoice that is already financed is submitted again (even through a different bank account), it will be flagged and may increase the fraud/duplicate score.
+            </Alert>
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>

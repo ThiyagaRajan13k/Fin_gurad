@@ -54,6 +54,8 @@ public class FinancingService {
         request.setStatus(FinancingStatus.PENDING);
         request.setTenureDays(dto.getTenureDays() != null ? dto.getTenureDays() : 30);
         request.setRemarks(dto.getRemarks());
+        request.setBankAccount(dto.getBankAccount());
+        request.setBankName(dto.getBankName());
         
         BigDecimal totalRequested = BigDecimal.ZERO;
 
@@ -104,6 +106,8 @@ public class FinancingService {
         dto.setExpectedDisbursementDate(request.getExpectedDisbursementDate());
         dto.setActualDisbursementDate(request.getActualDisbursementDate());
         dto.setRemarks(request.getRemarks());
+        dto.setBankAccount(request.getBankAccount());
+        dto.setBankName(request.getBankName());
         dto.setCreatedAt(request.getCreatedAt());
 
         java.util.Optional<FraudReport> fraudReportOpt = fraudReportRepository.findByFinancingRequestId(request.getId());
