@@ -27,6 +27,14 @@ public class FraudReport {
     private boolean duplicateFinancing;
     private boolean amountMatched;
 
+    private String bankAccount;
+    private String bankName;
+    private String invoiceNumber;
+    private boolean crossBankAttempt;
+
+    @Column(length = 1000)
+    private String flaggedReason;
+
     private Integer fraudScore;
     private String systemRecommendation; // SAFE, SUSPICIOUS, HIGH_RISK
 
@@ -101,6 +109,21 @@ public class FraudReport {
 
     public User getAnalyst() { return analyst; }
     public void setAnalyst(User analyst) { this.analyst = analyst; }
+
+    public String getBankAccount() { return bankAccount; }
+    public void setBankAccount(String bankAccount) { this.bankAccount = bankAccount; }
+
+    public String getBankName() { return bankName; }
+    public void setBankName(String bankName) { this.bankName = bankName; }
+
+    public String getInvoiceNumber() { return invoiceNumber; }
+    public void setInvoiceNumber(String invoiceNumber) { this.invoiceNumber = invoiceNumber; }
+
+    public boolean isCrossBankAttempt() { return crossBankAttempt; }
+    public void setCrossBankAttempt(boolean crossBankAttempt) { this.crossBankAttempt = crossBankAttempt; }
+
+    public String getFlaggedReason() { return flaggedReason; }
+    public void setFlaggedReason(String flaggedReason) { this.flaggedReason = flaggedReason; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

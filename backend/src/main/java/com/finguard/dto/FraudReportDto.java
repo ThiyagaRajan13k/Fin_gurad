@@ -16,6 +16,13 @@ public class FraudReportDto {
     private boolean duplicateInvoice;
     private boolean duplicateFinancing;
     private boolean amountMatched;
+
+    private String bankAccount;
+    private String bankName;
+    private String invoiceNumber;
+    private boolean crossBankAttempt;
+    private String flaggedReason;
+    private String customerName;
     
     private Integer fraudScore;
     private String systemRecommendation;
@@ -79,6 +86,24 @@ public class FraudReportDto {
 
     public String getAnalystName() { return analystName; }
     public void setAnalystName(String analystName) { this.analystName = analystName; }
+
+    public String getBankAccount() { return bankAccount; }
+    public void setBankAccount(String bankAccount) { this.bankAccount = bankAccount; }
+
+    public String getBankName() { return bankName; }
+    public void setBankName(String bankName) { this.bankName = bankName; }
+
+    public String getInvoiceNumber() { return invoiceNumber; }
+    public void setInvoiceNumber(String invoiceNumber) { this.invoiceNumber = invoiceNumber; }
+
+    public boolean isCrossBankAttempt() { return crossBankAttempt; }
+    public void setCrossBankAttempt(boolean crossBankAttempt) { this.crossBankAttempt = crossBankAttempt; }
+
+    public String getFlaggedReason() { return flaggedReason; }
+    public void setFlaggedReason(String flaggedReason) { this.flaggedReason = flaggedReason; }
+
+    public String getCustomerName() { return customerName; }
+    public void setCustomerName(String customerName) { this.customerName = customerName; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

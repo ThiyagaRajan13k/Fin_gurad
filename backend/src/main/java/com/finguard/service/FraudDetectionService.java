@@ -4,6 +4,9 @@ import com.finguard.dto.FraudReportDto;
 import com.finguard.entity.*;
 import com.finguard.repository.FraudReportRepository;
 import com.finguard.repository.FinancingRequestRepository;
+import com.finguard.repository.FinancingRequestItemRepository;
+import com.finguard.repository.InvoiceRepository;
+import com.finguard.repository.ShipmentRepository;
 import com.finguard.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -26,13 +29,13 @@ public class FraudDetectionService {
     private UserRepository userRepository;
 
     @Autowired
-    private com.finguard.repository.ShipmentRepository shipmentRepository;
+    private ShipmentRepository shipmentRepository;
 
     @Autowired
-    private com.finguard.repository.InvoiceRepository invoiceRepository;
+    private InvoiceRepository invoiceRepository;
 
     @Autowired
-    private com.finguard.repository.FinancingRequestItemRepository financingRequestItemRepository;
+    private FinancingRequestItemRepository financingRequestItemRepository;
 
     @Transactional
     public FraudReport generateReport(FinancingRequest detachedRequest) {
@@ -52,6 +55,13 @@ public class FraudDetectionService {
         Invoice invoice = null;
         if (request.getItems() != null && !request.getItems().isEmpty()) {
             invoice = request.getItems().get(0).getInvoice();
+        } else if (detachedRequest.getItems() != null && !detachedRequest.getItems().isEmpty()) {
+            invoice = detachedRequest.getItems().get(0).getInvoice();
+        } else {
+            List<FinancingRequestItem> currentItems = financingRequestItemRepository.findByFinancingRequestId(request.getId());
+            if (!currentItems.isEmpty()) {
+                invoice = currentItems.get(0).getInvoice();
+            }
         }
         
         SalesOrder order = (invoice != null) ? invoice.getSalesOrder() : null;
@@ -59,57 +69,79 @@ public class FraudDetectionService {
         report.setSalesOrderVerified(order != null && order.getStatus() != OrderStatus.PENDING);
         report.setShipmentVerified(order != null && shipmentRepository.existsBySalesOrderId(order.getId()));
         report.setInvoiceVerified(invoice != null && invoice.getStatus() != InvoiceStatus.DRAFT);
-        report.setAmountMatched(invoice != null && request.getTotalAmountRequested().compareTo(invoice.getTotalAmount()) <= 0);
+        report.setAmountMatched(invoice != null && request.getTotalAmountRequested() != null && request.getTotalAmountRequested().compareTo(invoice.getTotalAmount()) <= 0);
 
         // Dynamic Duplicate & Cross-Bank Financing Detection
         boolean isDuplicateFinancing = false;
         boolean isDuplicateInvoice = false;
         boolean isCrossBankAttempt = false;
+        StringBuilder flaggedReason = new StringBuilder();
+
+        String currentBank = request.getBankAccount() != null ? request.getBankAccount() 
+                           : (request.getBankName() != null ? request.getBankName() : "Unknown Bank");
 
         if (invoice != null) {
-            // Find existing financing requests that included this exact same invoice
+            report.setInvoiceNumber(invoice.getInvoiceNumber());
+
+            // Query existing items that referenced this exact same invoice
             List<FinancingRequestItem> priorItems = financingRequestItemRepository.findByInvoiceIdAndFinancingRequestIdNot(invoice.getId(), request.getId());
-            if (!priorItems.isEmpty()) {
+            
+            // Filter only non-rejected prior financing requests
+            List<FinancingRequestItem> activePriorItems = priorItems.stream()
+                .filter(item -> item.getFinancingRequest() != null && item.getFinancingRequest().getStatus() != FinancingStatus.REJECTED)
+                .collect(Collectors.toList());
+
+            if (!activePriorItems.isEmpty()) {
                 isDuplicateFinancing = true;
 
-                // Cross-bank attempt: check if previous financing was submitted to another bank account/name
-                for (FinancingRequestItem priorItem : priorItems) {
+                for (FinancingRequestItem priorItem : activePriorItems) {
                     FinancingRequest priorReq = priorItem.getFinancingRequest();
                     if (priorReq != null) {
-                        String priorBank = priorReq.getBankName() != null ? priorReq.getBankName() : priorReq.getBankAccount();
-                        String currentBank = request.getBankName() != null ? request.getBankName() : request.getBankAccount();
-                        if (priorBank != null && currentBank != null && !priorBank.equalsIgnoreCase(currentBank)) {
+                        String priorBank = priorReq.getBankAccount() != null ? priorReq.getBankAccount()
+                                         : (priorReq.getBankName() != null ? priorReq.getBankName() : "Primary Account");
+                        
+                        if (!priorBank.trim().equalsIgnoreCase(currentBank.trim())) {
                             isCrossBankAttempt = true;
+                            flaggedReason.append(String.format("Cross-Bank Financing Detected: Invoice %s was previously financed with '%s' (Request %s), and is now re-submitted under bank '%s'. ",
+                                invoice.getInvoiceNumber(), priorBank, priorReq.getRequestNumber(), currentBank));
+                        } else {
+                            flaggedReason.append(String.format("Duplicate Financing Detected: Invoice %s was already financed in Request %s under bank '%s'. ",
+                                invoice.getInvoiceNumber(), priorReq.getRequestNumber(), priorBank));
                         }
                     }
                 }
             }
 
-            // Duplicate invoice check: multiple active invoices sharing the same sales order
+            // Multiple invoices sharing same sales order check
             if (order != null && invoiceRepository.findBySalesOrderId(order.getId()).size() > 1) {
                 isDuplicateInvoice = true;
+                flaggedReason.append("Multiple invoices found for the same sales order. ");
             }
         }
 
+        report.setBankAccount(currentBank);
+        report.setBankName(request.getBankName() != null ? request.getBankName() : currentBank);
         report.setDuplicateFinancing(isDuplicateFinancing);
         report.setDuplicateInvoice(isDuplicateInvoice);
+        report.setCrossBankAttempt(isCrossBankAttempt);
+        report.setFlaggedReason(flaggedReason.toString().trim());
 
         // Calculate score according to flow diagram:
         // Valid Flow -> Normal (0/100)
-        // Duplicate Financing -> +Score (+50)
-        // Cross-bank Attempt -> +Score (+70)
+        // Duplicate Financing -> +Score (+75)
+        // Cross-bank Attempt -> +Score (+85)
         int score = 0;
         if (!report.isCustomerVerified()) score += 20;
         if (!report.isSalesOrderVerified()) score += 20;
         if (!report.isShipmentVerified()) score += 15;
         if (!report.isInvoiceVerified()) score += 15;
         if (!report.isAmountMatched()) score += 20;
-        if (report.isDuplicateInvoice()) score += 40;
+        if (report.isDuplicateInvoice()) score += 30;
         
         if (isCrossBankAttempt) {
-            score += 70; // High severity penalty for cross-institutional double pledge
+            score += 85; // High severity penalty for cross-institutional double pledge
         } else if (report.isDuplicateFinancing()) {
-            score += 50; // Critical duplicate financing penalty
+            score += 75; // Critical duplicate financing penalty
         }
 
         report.setFraudScore(Math.min(score, 100));
@@ -122,7 +154,13 @@ public class FraudDetectionService {
             report.setSystemRecommendation("HIGH_RISK");
         }
 
-        report.setAnalystDecision(FraudStatus.PENDING_REVIEW);
+        // When duplicate financing or cross-bank attempt is detected, auto-flag for the analyst!
+        if (isDuplicateFinancing || isCrossBankAttempt) {
+            report.setAnalystDecision(FraudStatus.FLAGGED);
+            report.setAnalystRemarks("AUTO-FLAGGED BY FRAUD ENGINE: " + report.getFlaggedReason());
+        } else {
+            report.setAnalystDecision(FraudStatus.PENDING_REVIEW);
+        }
         
         return fraudReportRepository.save(report);
     }
@@ -158,8 +196,33 @@ public class FraudDetectionService {
         FraudReportDto dto = new FraudReportDto();
         dto.setId(report.getId());
         dto.setReportNumber(report.getReportNumber());
-        dto.setFinancingRequestId(report.getFinancingRequest().getId());
-        dto.setFinancingRequestNumber(report.getFinancingRequest().getRequestNumber());
+
+        if (report.getFinancingRequest() != null) {
+            FinancingRequest req = report.getFinancingRequest();
+            dto.setFinancingRequestId(req.getId());
+            dto.setFinancingRequestNumber(req.getRequestNumber());
+            dto.setBankAccount(req.getBankAccount());
+            dto.setBankName(req.getBankName());
+            if (req.getCustomer() != null) {
+                dto.setCustomerName(req.getCustomer().getName());
+            }
+            if (req.getItems() != null && !req.getItems().isEmpty() && req.getItems().get(0).getInvoice() != null) {
+                dto.setInvoiceNumber(req.getItems().get(0).getInvoice().getInvoiceNumber());
+            }
+        }
+
+        if (dto.getBankAccount() == null) {
+            dto.setBankAccount(report.getBankAccount());
+        }
+        if (dto.getBankName() == null) {
+            dto.setBankName(report.getBankName());
+        }
+        if (dto.getInvoiceNumber() == null) {
+            dto.setInvoiceNumber(report.getInvoiceNumber());
+        }
+
+        dto.setCrossBankAttempt(report.isCrossBankAttempt());
+        dto.setFlaggedReason(report.getFlaggedReason());
         
         dto.setCustomerVerified(report.isCustomerVerified());
         dto.setSalesOrderVerified(report.isSalesOrderVerified());
@@ -171,7 +234,7 @@ public class FraudDetectionService {
         
         dto.setFraudScore(report.getFraudScore());
         dto.setSystemRecommendation(report.getSystemRecommendation());
-        dto.setAnalystDecision(report.getAnalystDecision().name());
+        dto.setAnalystDecision(report.getAnalystDecision() != null ? report.getAnalystDecision().name() : "PENDING_REVIEW");
         dto.setAnalystRemarks(report.getAnalystRemarks());
         
         if (report.getAnalyst() != null) {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, Card, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, FormControl, InputLabel, Select, Alert, AlertTitle } from '@mui/material';
 import { motion } from 'framer-motion';
-import { FileText, CheckCircle, XCircle, Landmark, ShieldAlert, Settings, Plus, CreditCard } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Landmark, ShieldAlert, Settings, Plus, CreditCard, AlertTriangle } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -163,6 +163,9 @@ const Financing = () => {
 
   const selectedInvoice = invoices.find(i => i.id === newRequest.invoiceId);
   const isInvoiceAlreadyFinanced = selectedInvoice && usedInvoiceIds.has(selectedInvoice.id);
+  const priorRequest = requests.find(r => 
+    r.status !== 'REJECTED' && r.items && r.items.some(item => item.invoiceId === newRequest.invoiceId)
+  );
 
   return (
     <Box component={motion.div} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
@@ -365,6 +368,41 @@ const Financing = () => {
               </Typography>
             </FormControl>
 
+            {/* Prominent warning when an already used invoice is selected */}
+            {isInvoiceAlreadyFinanced && (
+              <Alert 
+                severity="error" 
+                icon={<AlertTriangle size={24} color="#d32f2f" />}
+                sx={{ 
+                  border: '2px solid #d32f2f', 
+                  bgcolor: '#fff5f5', 
+                  borderRadius: 2,
+                  '& .MuiAlert-message': { width: '100%' }
+                }}
+              >
+                <AlertTitle sx={{ fontWeight: 'bold', color: '#b71c1c', fontSize: '0.95rem' }}>
+                  ⚠️ WARNING: INVOICE ALREADY FINANCED!
+                </AlertTitle>
+                <Typography variant="body2" sx={{ color: '#b71c1c', mb: 1, fontWeight: 500 }}>
+                  Invoice <strong>{selectedInvoice?.invoiceNumber}</strong> has already been used for financing:
+                </Typography>
+                <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderRadius: 1.5, border: '1px dashed #ef9a9a', mb: 1.5 }}>
+                  <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
+                    • <strong>Previous Request #:</strong> <span style={{ color: '#000' }}>{priorRequest?.requestNumber || 'Previous Request'}</span>
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
+                    • <strong>Previously Financed Bank Account:</strong> <span style={{ color: '#1976d2', fontWeight: 'bold' }}>{priorRequest?.bankAccount || priorRequest?.bankName || 'Indian Bank •••• 1928'}</span>
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                    • <strong>Current Target Bank Account:</strong> <span style={{ color: '#2e7d32', fontWeight: 'bold' }}>{newRequest.bankAccount || newRequest.bankName}</span>
+                  </Typography>
+                </Box>
+                <Typography variant="caption" sx={{ color: '#c62828', fontWeight: 600, display: 'block' }}>
+                  🚨 If you proceed with this submission, it will be automatically <strong>FLAGGED as Duplicate / Cross-Bank Fraud</strong> by the Fraud Detection Engine and escalated directly to the Fraud Analyst with a severe risk penalty.
+                </Typography>
+              </Alert>
+            )}
+
             <TextField
               label="Amount Requested (₹) *"
               type="number"
@@ -393,28 +431,31 @@ const Financing = () => {
             />
 
             {/* Warning banner matching user mock */}
-            <Alert 
-              severity="warning" 
-              icon={<ShieldAlert size={20} />}
-              sx={{ 
-                backgroundColor: 'rgba(237, 108, 2, 0.08)',
-                border: '1px solid rgba(237, 108, 2, 0.3)',
-                borderRadius: 2,
-                fontSize: '0.8rem'
-              }}
-            >
-              If an invoice that is already financed is submitted again (even through a different bank account), it will be flagged and may increase the fraud/duplicate score.
-            </Alert>
+            {!isInvoiceAlreadyFinanced && (
+              <Alert 
+                severity="warning" 
+                icon={<ShieldAlert size={20} />}
+                sx={{ 
+                  backgroundColor: 'rgba(237, 108, 2, 0.08)',
+                  border: '1px solid rgba(237, 108, 2, 0.3)',
+                  borderRadius: 2,
+                  fontSize: '0.8rem'
+                }}
+              >
+                If an invoice that is already financed is submitted again (even through a different bank account), it will be flagged and may increase the fraud/duplicate score.
+              </Alert>
+            )}
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
           <Button onClick={() => setOpenDialog(false)}>Cancel</Button>
           <Button 
             variant="contained" 
+            color={isInvoiceAlreadyFinanced ? "error" : "primary"}
             onClick={handleCreateRequest}
             disabled={!newRequest.customerId || !newRequest.invoiceId || !newRequest.bankAccount}
           >
-            Submit Request
+            {isInvoiceAlreadyFinanced ? "Submit Anyway (Will Be Flagged)" : "Submit Request"}
           </Button>
         </DialogActions>
       </Dialog>

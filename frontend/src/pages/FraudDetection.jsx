@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, 
-  TableRow, Chip, CircularProgress, Alert, Button, Dialog, DialogTitle, DialogContent, 
+  TableRow, Chip, CircularProgress, Alert, AlertTitle, Button, Dialog, DialogTitle, DialogContent, 
   DialogActions, TextField, Grid, Divider
 } from '@mui/material';
 import ShieldIcon from '@mui/icons-material/Shield';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import WarningIcon from '@mui/icons-material/Warning';
 import ErrorIcon from '@mui/icons-material/Error';
+import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
 import { getFraudReports, updateFraudDecision } from '../services/api';
 
 const FraudDetection = () => {
@@ -39,7 +40,7 @@ const FraudDetection = () => {
 
   const handleOpenDialog = (report) => {
     setSelectedReport(report);
-    setRemarks('');
+    setRemarks(report.analystRemarks || '');
     setDialogOpen(true);
   };
 
@@ -74,16 +75,28 @@ const FraudDetection = () => {
   const renderStatusChip = (status) => {
     switch(status) {
       case 'PENDING_REVIEW': return <Chip label="Pending Review" color="warning" size="small" />;
-      case 'CLEARED': return <Chip label="Cleared" color="success" size="small" />;
-      case 'FLAGGED': return <Chip label="Flagged" color="error" size="small" />;
+      case 'CLEARED': return <Chip label="Cleared (Safe)" color="success" size="small" />;
+      case 'FLAGGED': return <Chip label="Flagged (Fraud)" color="error" size="small" />;
       default: return <Chip label={status} size="small" />;
     }
   };
 
   const VerificationItem = ({ label, passed }) => (
     <Grid item xs={6} md={4} sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-      {passed ? <CheckCircleIcon color="success" sx={{ mr: 1 }} fontSize="small" /> : <ErrorIcon color="error" sx={{ mr: 1 }} fontSize="small" />}
-      <Typography variant="body2">{label}</Typography>
+      {passed ? (
+        <CheckCircleIcon color="success" sx={{ mr: 1 }} fontSize="small" />
+      ) : (
+        <ErrorIcon color="error" sx={{ mr: 1 }} fontSize="small" />
+      )}
+      <Typography 
+        variant="body2" 
+        sx={{ 
+          fontWeight: !passed ? 'bold' : 'normal',
+          color: !passed ? 'error.main' : 'text.primary' 
+        }}
+      >
+        {label} {!passed && '(FLAGGED)'}
+      </Typography>
     </Grid>
   );
 
@@ -113,6 +126,8 @@ const FraudDetection = () => {
                 <TableRow sx={{ backgroundColor: 'grey.50' }}>
                   <TableCell>Report #</TableCell>
                   <TableCell>Financing Req #</TableCell>
+                  <TableCell>Bank Account</TableCell>
+                  <TableCell>Invoice #</TableCell>
                   <TableCell>System Rec.</TableCell>
                   <TableCell>Fraud Score</TableCell>
                   <TableCell>Analyst Decision</TableCell>
@@ -122,7 +137,7 @@ const FraudDetection = () => {
               <TableBody>
                 {reports.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 3 }}>
+                    <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
                       No fraud reports found.
                     </TableCell>
                   </TableRow>
@@ -131,6 +146,19 @@ const FraudDetection = () => {
                     <TableRow key={row.id} hover>
                       <TableCell>{row.reportNumber}</TableCell>
                       <TableCell>{row.financingRequestNumber}</TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                          <AccountBalanceIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                            {row.bankAccount || row.bankName || '—'}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                          {row.invoiceNumber || '—'}
+                        </Typography>
+                      </TableCell>
                       <TableCell>
                         <Chip 
                           label={row.systemRecommendation} 
@@ -150,9 +178,8 @@ const FraudDetection = () => {
                           variant="outlined" 
                           size="small" 
                           onClick={() => handleOpenDialog(row)}
-                          disabled={row.analystDecision !== 'PENDING_REVIEW'}
                         >
-                          {row.analystDecision !== 'PENDING_REVIEW' ? 'Reviewed' : 'Review'}
+                          Review
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -176,11 +203,32 @@ const FraudDetection = () => {
               <Box sx={{ mb: 3 }}>
                 <Typography variant="h6" gutterBottom>System Analysis</Typography>
                 <Grid container spacing={2} sx={{ p: 2, backgroundColor: 'grey.50', borderRadius: 1 }}>
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} md={4}>
                     <Typography variant="subtitle2" color="text.secondary">Financing Request</Typography>
-                    <Typography variant="body1">{selectedReport.financingRequestNumber}</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600 }}>{selectedReport.financingRequestNumber}</Typography>
                   </Grid>
-                  <Grid item xs={12} md={3}>
+                  <Grid item xs={12} md={4}>
+                    <Typography variant="subtitle2" color="text.secondary">Bank Account</Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <AccountBalanceIcon sx={{ fontSize: 16, color: 'primary.main' }} />
+                      <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                        {selectedReport.bankAccount || selectedReport.bankName || 'Not specified'}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Typography variant="subtitle2" color="text.secondary">Invoice Number</Typography>
+                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                      {selectedReport.invoiceNumber || 'Not specified'}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Typography variant="subtitle2" color="text.secondary">Customer</Typography>
+                    <Typography variant="body1">
+                      {selectedReport.customerName || 'Acme Corporation'}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
                     <Typography variant="subtitle2" color="text.secondary">System Rec.</Typography>
                     <Chip 
                       label={selectedReport.systemRecommendation} 
@@ -188,13 +236,46 @@ const FraudDetection = () => {
                       size="small" 
                     />
                   </Grid>
-                  <Grid item xs={12} md={3}>
+                  <Grid item xs={12} md={4}>
                     <Typography variant="subtitle2" color="text.secondary">Fraud Score</Typography>
                     <Typography variant="h6" sx={{ color: getScoreColor(selectedReport.fraudScore), fontWeight: 'bold' }}>
                       {selectedReport.fraudScore} / 100
                     </Typography>
                   </Grid>
                 </Grid>
+
+                {/* Prominent Duplicate / Cross-Bank Fraud Banner */}
+                {(selectedReport.duplicateFinancing || selectedReport.crossBankAttempt || selectedReport.flaggedReason) && (
+                  <Alert 
+                    severity="error" 
+                    icon={<ErrorIcon fontSize="large" />} 
+                    sx={{ 
+                      mt: 2, 
+                      border: '2px solid #d32f2f', 
+                      bgcolor: '#fff5f5', 
+                      borderRadius: 2,
+                      '& .MuiAlert-message': { width: '100%' }
+                    }}
+                  >
+                    <AlertTitle sx={{ fontWeight: 'bold', color: '#b71c1c', fontSize: '1rem' }}>
+                      🚨 {selectedReport.crossBankAttempt ? 'CROSS-BANK FRAUD FLAGGED' : 'DUPLICATE FINANCING FLAGGED'}
+                    </AlertTitle>
+                    <Typography variant="body2" sx={{ color: '#b71c1c', fontWeight: 600, mt: 0.5 }}>
+                      {selectedReport.flaggedReason || `This invoice (${selectedReport.invoiceNumber}) was detected as duplicate / cross-bank financing across accounts.`}
+                    </Typography>
+                    <Box sx={{ mt: 1, p: 1, bgcolor: '#ffffff', borderRadius: 1, border: '1px dashed #ef9a9a' }}>
+                      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                        • <strong>Target Bank Account for this request:</strong> {selectedReport.bankAccount || selectedReport.bankName || 'N/A'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                        • <strong>Invoice Number:</strong> {selectedReport.invoiceNumber || 'N/A'}
+                      </Typography>
+                      <Typography variant="caption" sx={{ display: 'block', color: '#d32f2f', fontWeight: 600 }}>
+                        • <strong>Status:</strong> Automatically flagged and assigned high-risk penalty score.
+                      </Typography>
+                    </Box>
+                  </Alert>
+                )}
               </Box>
 
               <Divider sx={{ my: 2 }} />
@@ -217,8 +298,8 @@ const FraudDetection = () => {
               <Box>
                 <Typography variant="h6" gutterBottom>Analyst Override</Typography>
                 {selectedReport.analystDecision !== 'PENDING_REVIEW' && (
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    Currently marked as {selectedReport.analystDecision} by {selectedReport.analystName}
+                  <Alert severity={selectedReport.analystDecision === 'FLAGGED' ? 'error' : 'info'} sx={{ mb: 2 }}>
+                    Currently marked as <strong>{selectedReport.analystDecision}</strong> {selectedReport.analystName ? `by ${selectedReport.analystName}` : '(Automated Engine Detection)'}
                   </Alert>
                 )}
                 <TextField

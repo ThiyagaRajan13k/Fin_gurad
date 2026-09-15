@@ -78,7 +78,7 @@ public class FinancingService {
         }
 
         request.setTotalAmountRequested(totalRequested);
-        FinancingRequest saved = financingRepository.save(request);
+        FinancingRequest saved = financingRepository.saveAndFlush(request);
         fraudDetectionService.generateReport(saved);
         return mapToDto(saved);
     }
