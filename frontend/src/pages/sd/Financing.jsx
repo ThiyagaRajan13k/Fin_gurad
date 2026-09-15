@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Typography, Card, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Button, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, FormControl, InputLabel, Select, Alert, AlertTitle } from '@mui/material';
 import { motion } from 'framer-motion';
-import { FileText, CheckCircle, XCircle, Landmark, ShieldAlert, Settings } from 'lucide-react';
+import { FileText, CheckCircle, XCircle, Landmark, ShieldAlert, Settings, Plus, CreditCard } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -13,22 +13,64 @@ const Financing = () => {
   const [customers, setCustomers] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [viewRequest, setViewRequest] = useState(null);
+
+  // Bank accounts state initialized with user's saved accounts.
+  // Initially includes Indian Bank account so only banks the user has an account in are available.
+  const [bankAccounts, setBankAccounts] = useState(() => {
+    const saved = localStorage.getItem('finguard_user_bank_accounts');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return [
+      { name: 'Indian Bank', accountNumber: '20194827101928', cifNumber: 'CIF9928143', label: 'Indian Bank •••• 1928' }
+    ];
+  });
+
   const [newRequest, setNewRequest] = useState({
     customerId: '',
     invoiceId: '',
-    bankAccount: 'HDFC Bank •••• 4821',
-    bankName: 'HDFC Bank',
+    bankAccount: 'Indian Bank •••• 1928',
+    bankName: 'Indian Bank',
     tenureDays: 30,
     amountRequested: '',
     remarks: 'Working capital for raw material purchase'
   });
 
-  const bankAccounts = [
-    { name: 'HDFC Bank', label: 'HDFC Bank •••• 4821', icon: 'HDFC' },
-    { name: 'ICICI Bank', label: 'ICICI Bank •••• 1092', icon: 'ICICI' },
-    { name: 'State Bank of India', label: 'SBI •••• 7734', icon: 'SBI' },
-    { name: 'Axis Bank', label: 'Axis Bank •••• 9210', icon: 'AXIS' }
-  ];
+  const [openBankDialog, setOpenBankDialog] = useState(false);
+  const [newBankForm, setNewBankForm] = useState({
+    selectedBank: 'Indian Bank',
+    accountNumber: '',
+    cifNumber: ''
+  });
+
+  const handleSaveBankAccount = () => {
+    if (!newBankForm.accountNumber.trim() || !newBankForm.cifNumber.trim()) {
+      alert('Please fill in both Account Number and CIF Number');
+      return;
+    }
+    const bankName = newBankForm.selectedBank;
+    const last4 = newBankForm.accountNumber.trim().slice(-4) || '0000';
+    const newEntry = {
+      name: bankName,
+      accountNumber: newBankForm.accountNumber.trim(),
+      cifNumber: newBankForm.cifNumber.trim(),
+      label: `${bankName} •••• ${last4}`
+    };
+
+    const updated = [...bankAccounts, newEntry];
+    setBankAccounts(updated);
+    localStorage.setItem('finguard_user_bank_accounts', JSON.stringify(updated));
+
+    // Automatically select the newly created bank account for the current request
+    setNewRequest(prev => ({
+      ...prev,
+      bankAccount: newEntry.label,
+      bankName: newEntry.name
+    }));
+
+    setOpenBankDialog(false);
+    setNewBankForm({ selectedBank: 'Indian Bank', accountNumber: '', cifNumber: '' });
+  };
 
   useEffect(() => {
     const fetchRequests = async () => {
@@ -92,8 +134,8 @@ const Financing = () => {
       setNewRequest({
         customerId: '',
         invoiceId: '',
-        bankAccount: 'HDFC Bank •••• 4821',
-        bankName: 'HDFC Bank',
+        bankAccount: bankAccounts[0]?.label || '',
+        bankName: bankAccounts[0]?.name || '',
         tenureDays: 30,
         amountRequested: '',
         remarks: 'Working capital for raw material purchase'
@@ -128,11 +170,21 @@ const Financing = () => {
         <Typography variant="h4" fontWeight="bold" color="text.primary">
           Financing Requests
         </Typography>
-        {user?.role === 'ROLE_SUPPLIER' && (
-          <Button variant="contained" color="primary" startIcon={<FileText size={18} />} onClick={() => setOpenDialog(true)}>
-            New Request
+        <Box display="flex" gap={1.5}>
+          <Button 
+            variant="outlined" 
+            color="primary" 
+            startIcon={<Plus size={18} />} 
+            onClick={() => setOpenBankDialog(true)}
+          >
+            Add Bank Account
           </Button>
-        )}
+          {user?.role === 'ROLE_SUPPLIER' && (
+            <Button variant="contained" color="primary" startIcon={<FileText size={18} />} onClick={() => setOpenDialog(true)}>
+              New Request
+            </Button>
+          )}
+        </Box>
       </Box>
 
       <Card sx={{ borderRadius: 3, overflow: 'hidden' }}>
@@ -142,6 +194,7 @@ const Financing = () => {
               <TableRow>
                 <TableCell>Request #</TableCell>
                 <TableCell>Customer</TableCell>
+                <TableCell>Bank</TableCell>
                 <TableCell>Tenure (Days)</TableCell>
                 <TableCell align="right">Requested</TableCell>
                 <TableCell align="right">Approved</TableCell>
@@ -152,17 +205,25 @@ const Financing = () => {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 3 }}>Loading...</TableCell>
+                  <TableCell colSpan={8} align="center" sx={{ py: 3 }}>Loading...</TableCell>
                 </TableRow>
               ) : requests.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 3 }}>No financing requests found</TableCell>
+                  <TableCell colSpan={8} align="center" sx={{ py: 3 }}>No financing requests found</TableCell>
                 </TableRow>
               ) : (
                 requests.map((req) => (
                   <TableRow key={req.id} hover>
                     <TableCell fontWeight="500">{req.requestNumber}</TableCell>
                     <TableCell>{req.customerName}</TableCell>
+                    <TableCell>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Landmark size={15} style={{ color: '#1976d2' }} />
+                        <Typography variant="body2" fontWeight="500">
+                          {req.bankAccount || req.bankName || 'Indian Bank •••• 1928'}
+                        </Typography>
+                      </Box>
+                    </TableCell>
                     <TableCell>{req.tenureDays}</TableCell>
                     <TableCell align="right">₹{req.totalAmountRequested?.toLocaleString()}</TableCell>
                     <TableCell align="right">₹{req.totalAmountApproved?.toLocaleString()}</TableCell>
@@ -193,19 +254,26 @@ const Financing = () => {
         </TableContainer>
       </Card>
 
+      {/* New Financing Request Dialog */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>New Financing Request</DialogTitle>
         <DialogContent>
           <Box display="flex" flexDirection="column" gap={3} mt={2}>
-            {/* Bank Account Selector as seen in user design */}
+            {/* Bank Account Selector */}
             <Box>
               <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
                 <Typography variant="caption" fontWeight="bold" color="text.secondary">
                   Bank Account *
                 </Typography>
-                <Box display="flex" alignItems="center" gap={0.5} sx={{ color: 'primary.main', cursor: 'pointer', fontSize: '0.75rem' }}>
-                  <Settings size={12} />
-                  <span>Manage linked accounts</span>
+                <Box 
+                  display="flex" 
+                  alignItems="center" 
+                  gap={0.5} 
+                  sx={{ color: 'primary.main', cursor: 'pointer', fontSize: '0.75rem' }}
+                  onClick={() => setOpenBankDialog(true)}
+                >
+                  <Plus size={12} />
+                  <span>Add Bank Account</span>
                 </Box>
               </Box>
               <FormControl fullWidth size="small">
@@ -216,28 +284,40 @@ const Financing = () => {
                     setNewRequest({
                       ...newRequest,
                       bankAccount: e.target.value,
-                      bankName: acc ? acc.name : 'HDFC Bank'
+                      bankName: acc ? acc.name : ''
                     });
                   }}
-                  renderValue={(value) => (
-                    <Box display="flex" alignItems="center" gap={1.5}>
-                      <Landmark size={18} style={{ color: '#1976d2' }} />
-                      <Typography variant="body2" fontWeight="500">{value}</Typography>
-                    </Box>
-                  )}
-                >
-                  {bankAccounts.map((acc) => (
-                    <MenuItem key={acc.label} value={acc.label}>
+                  displayEmpty
+                  renderValue={(value) => {
+                    if (!value) {
+                      return <Typography variant="body2" color="text.secondary">Select an account</Typography>;
+                    }
+                    return (
                       <Box display="flex" alignItems="center" gap={1.5}>
-                        <Landmark size={16} />
-                        <span>{acc.label}</span>
+                        <Landmark size={18} style={{ color: '#1976d2' }} />
+                        <Typography variant="body2" fontWeight="500">{value}</Typography>
                       </Box>
+                    );
+                  }}
+                >
+                  {bankAccounts.length === 0 ? (
+                    <MenuItem disabled value="">
+                      <em>No bank accounts found. Please add a bank account first.</em>
                     </MenuItem>
-                  ))}
+                  ) : (
+                    bankAccounts.map((acc) => (
+                      <MenuItem key={acc.label} value={acc.label}>
+                        <Box display="flex" alignItems="center" gap={1.5}>
+                          <Landmark size={16} />
+                          <span>{acc.label} ({acc.name})</span>
+                        </Box>
+                      </MenuItem>
+                    ))
+                  )}
                 </Select>
               </FormControl>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                Select a linked bank account (linked during your account setup).
+                Only the banks in which you have an active account appear in this phase.
               </Typography>
             </Box>
 
@@ -332,13 +412,66 @@ const Financing = () => {
           <Button 
             variant="contained" 
             onClick={handleCreateRequest}
-            disabled={!newRequest.customerId || !newRequest.invoiceId}
+            disabled={!newRequest.customerId || !newRequest.invoiceId || !newRequest.bankAccount}
           >
             Submit Request
           </Button>
         </DialogActions>
       </Dialog>
 
+      {/* Add Bank Account Dialog */}
+      <Dialog open={openBankDialog} onClose={() => setOpenBankDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Landmark size={20} color="#1976d2" />
+          Add Bank Account
+        </DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2.5} mt={1}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Bank Name *</InputLabel>
+              <Select
+                value={newBankForm.selectedBank}
+                label="Bank Name *"
+                onChange={(e) => setNewBankForm({ ...newBankForm, selectedBank: e.target.value })}
+              >
+                <MenuItem value="Indian Bank">Indian Bank</MenuItem>
+                <MenuItem value="SBI">SBI</MenuItem>
+                <MenuItem value="HDFC">HDFC</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Account Number *"
+              fullWidth
+              size="small"
+              value={newBankForm.accountNumber}
+              onChange={(e) => setNewBankForm({ ...newBankForm, accountNumber: e.target.value })}
+              placeholder="e.g. 50100492814821"
+            />
+
+            <TextField
+              label="CIF Number *"
+              fullWidth
+              size="small"
+              value={newBankForm.cifNumber}
+              onChange={(e) => setNewBankForm({ ...newBankForm, cifNumber: e.target.value })}
+              placeholder="e.g. CIF8829141"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setOpenBankDialog(false)}>Cancel</Button>
+          <Button 
+            variant="contained" 
+            onClick={handleSaveBankAccount}
+            disabled={!newBankForm.accountNumber.trim() || !newBankForm.cifNumber.trim()}
+          >
+            Save Bank Account
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* View Request Details Dialog */}
       <Dialog open={!!viewRequest} onClose={() => setViewRequest(null)} maxWidth="sm" fullWidth>
         {viewRequest && (
           <>
@@ -348,6 +481,10 @@ const Financing = () => {
                 <Box display="flex" justifyContent="space-between">
                   <Typography color="text.secondary">Customer</Typography>
                   <Typography fontWeight="500">{viewRequest.customerName}</Typography>
+                </Box>
+                <Box display="flex" justifyContent="space-between">
+                  <Typography color="text.secondary">Bank</Typography>
+                  <Typography fontWeight="500">{viewRequest.bankAccount || viewRequest.bankName || 'Indian Bank'}</Typography>
                 </Box>
                 <Box display="flex" justifyContent="space-between">
                   <Typography color="text.secondary">Status</Typography>
