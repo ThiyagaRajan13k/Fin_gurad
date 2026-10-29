@@ -1,9 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, LinearProgress, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, Button, TextField } from '@mui/material';
-import { Plus } from 'lucide-react';
+import { 
+  Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, 
+  TableRow, Chip, LinearProgress, IconButton, Dialog, DialogTitle, DialogContent, 
+  DialogActions, Button, TextField, Alert, AlertTitle 
+} from '@mui/material';
+import { Plus, PackageX, AlertTriangle } from 'lucide-react';
 import { getAllInventory, syncInventory, adjustStock } from '../../services/inventoryService';
+import { useNotifications } from '../../context/NotificationContext';
 
 const Inventory = () => {
+  const { refreshAlerts } = useNotifications();
   const [inventory, setInventory] = useState([]);
   const [addStockDialog, setAddStockDialog] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -43,23 +49,45 @@ const Inventory = () => {
     try {
       await adjustStock(selectedItem.productId, Number(amountToAdd));
       setAddStockDialog(false);
-      fetchInventory();
+      await Promise.all([fetchInventory(), refreshAlerts()]);
     } catch (error) {
       console.error("Failed to add stock", error);
       alert("Failed to add stock: " + error.response?.data?.message || error.message);
     }
   };
 
+  const outOfStockItems = inventory.filter(i => i.availableStock <= 0);
+
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4" fontWeight="bold">Inventory Management</Typography>
       </Box>
 
-      <TableContainer component={Paper}>
+      {/* Prominent in-app notification when product reaches Out of Stock */}
+      {outOfStockItems.length > 0 && (
+        <Alert 
+          severity="error" 
+          icon={<PackageX size={24} color="#d32f2f" />}
+          sx={{ 
+            mb: 3, 
+            borderRadius: 2, 
+            border: '2px solid #d32f2f', 
+            bgcolor: '#fff5f5' 
+          }}
+        >
+          <AlertTitle sx={{ fontWeight: 'bold', color: '#b71c1c' }}>
+            🚨 OUT OF STOCK ALERT ({outOfStockItems.length} Product{outOfStockItems.length > 1 ? 's' : ''})
+          </AlertTitle>
+          The following product(s) have reached <strong>0 available stock</strong>: <strong>{outOfStockItems.map(i => `${i.productName} (${i.productCode})`).join(', ')}</strong>.
+          Suppliers are blocked from adding these products to new sales orders until stock is replenished.
+        </Alert>
+      )}
+
+      <TableContainer component={Paper} sx={{ borderRadius: 3, overflow: 'hidden' }}>
         <Table>
           <TableHead>
-            <TableRow>
+            <TableRow sx={{ bgcolor: 'grey.50' }}>
               <TableCell sx={{ fontWeight: 'bold' }}>Product Code</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }}>Product Name</TableCell>
               <TableCell sx={{ fontWeight: 'bold' }}>Available Stock</TableCell>
@@ -76,12 +104,12 @@ const Inventory = () => {
               const progress = (item.availableStock / maxStock) * 100;
               
               return (
-                <TableRow key={item.id} hover>
+                <TableRow key={item.id} hover sx={{ bgcolor: item.availableStock <= 0 ? 'rgba(211, 47, 47, 0.02)' : 'inherit' }}>
                   <TableCell>
                     <Chip label={item.productCode} size="small" variant="outlined" />
                   </TableCell>
-                  <TableCell>{item.productName}</TableCell>
-                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1.1em' }}>
+                  <TableCell sx={{ fontWeight: 500 }}>{item.productName}</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold', fontSize: '1.1em', color: item.availableStock <= 0 ? 'error.main' : 'inherit' }}>
                     {item.availableStock}
                   </TableCell>
                   <TableCell>{item.lowStockAlertLevel}</TableCell>
@@ -106,7 +134,7 @@ const Inventory = () => {
             })}
             {inventory.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6} align="center" sx={{ py: 3 }}>No inventory records found.</TableCell>
+                <TableCell colSpan={7} align="center" sx={{ py: 3 }}>No inventory records found.</TableCell>
               </TableRow>
             )}
           </TableBody>

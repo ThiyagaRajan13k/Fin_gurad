@@ -71,6 +71,13 @@ public class InventoryService {
         }
     }
 
+    public List<InventoryDto> getInventoryAlerts() {
+        return inventoryRepository.findAll().stream()
+                .filter(inv -> inv.getAvailableStock() <= inv.getLowStockAlertLevel())
+                .map(this::convertToDto)
+                .collect(Collectors.toList());
+    }
+
     private InventoryDto convertToDto(Inventory inventory) {
         InventoryDto dto = new InventoryDto();
         dto.setId(inventory.getId());
@@ -81,6 +88,15 @@ public class InventoryService {
         }
         dto.setAvailableStock(inventory.getAvailableStock());
         dto.setLowStockAlertLevel(inventory.getLowStockAlertLevel());
+
+        if (inventory.getAvailableStock() <= 0) {
+            dto.setStatus("OUT_OF_STOCK");
+        } else if (inventory.getAvailableStock() <= inventory.getLowStockAlertLevel()) {
+            dto.setStatus("LOW_STOCK");
+        } else {
+            dto.setStatus("IN_STOCK");
+        }
+
         return dto;
     }
 }

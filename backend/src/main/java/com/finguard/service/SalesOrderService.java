@@ -69,22 +69,29 @@ public class SalesOrderService {
                 Product product = productRepository.findById(itemDto.getProductId())
                         .orElseThrow(() -> new RuntimeException("Product not found"));
 
-                // Ensure inventory record exists, create with default buffer if missing
                 Inventory inventory = inventoryRepository.findByProductId(product.getId())
                         .orElseGet(() -> {
                             Inventory newInv = new Inventory();
                             newInv.setProduct(product);
-                            newInv.setAvailableStock(500);
-                            newInv.setLowStockAlertLevel(20);
+                            newInv.setAvailableStock(0);
+                            newInv.setLowStockAlertLevel(10);
                             return inventoryRepository.save(newInv);
                         });
                 
+                int reqQty = itemDto.getQuantity() != null ? itemDto.getQuantity() : 1;
+                if (inventory.getAvailableStock() <= 0) {
+                    throw new RuntimeException("Product '" + product.getName() + "' is OUT OF STOCK (0 available). You cannot add or order out-of-stock products.");
+                }
+                if (inventory.getAvailableStock() < reqQty) {
+                    throw new RuntimeException("Insufficient stock for product '" + product.getName() + "'. Available: " + inventory.getAvailableStock() + ", Requested: " + reqQty);
+                }
+                
                 SalesOrderItem item = new SalesOrderItem();
                 item.setProduct(product);
-                item.setQuantity(itemDto.getQuantity());
+                item.setQuantity(reqQty);
                 item.setUnitPrice(product.getPrice());
                 
-                BigDecimal subTotal = product.getPrice().multiply(new BigDecimal(itemDto.getQuantity()));
+                BigDecimal subTotal = product.getPrice().multiply(new BigDecimal(reqQty));
                 BigDecimal tax = subTotal.multiply(product.getGstPercentage()).divide(new BigDecimal(100));
                 
                 item.setSubTotal(subTotal);
@@ -121,17 +128,10 @@ public class SalesOrderService {
             // Deduct inventory
             for (SalesOrderItem item : order.getItems()) {
                 Inventory inventory = inventoryRepository.findByProductId(item.getProduct().getId())
-                        .orElseGet(() -> {
-                            Inventory newInv = new Inventory();
-                            newInv.setProduct(item.getProduct());
-                            newInv.setAvailableStock(item.getQuantity() + 100);
-                            newInv.setLowStockAlertLevel(20);
-                            return inventoryRepository.save(newInv);
-                        });
+                        .orElseThrow(() -> new RuntimeException("Inventory not found for product: " + item.getProduct().getName()));
                 
                 if (inventory.getAvailableStock() < item.getQuantity()) {
-                    // Replenish stock to allow the demo order to confirm cleanly
-                    inventory.setAvailableStock(item.getQuantity() + 50);
+                    throw new RuntimeException("Product '" + item.getProduct().getName() + "' is out of stock! Available: " + inventory.getAvailableStock() + ", Requested: " + item.getQuantity());
                 }
                 
                 inventory.setAvailableStock(inventory.getAvailableStock() - item.getQuantity());

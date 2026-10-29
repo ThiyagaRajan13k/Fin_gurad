@@ -77,6 +77,21 @@ public class ProductService {
         dto.setGstPercentage(product.getGstPercentage());
         dto.setUnit(product.getUnit());
         dto.setStatus(product.getStatus());
+
+        inventoryRepository.findByProductId(product.getId()).ifPresentOrElse(inv -> {
+            dto.setAvailableStock(inv.getAvailableStock());
+            if (inv.getAvailableStock() <= 0) {
+                dto.setStockStatus("OUT_OF_STOCK");
+            } else if (inv.getAvailableStock() <= inv.getLowStockAlertLevel()) {
+                dto.setStockStatus("LOW_STOCK");
+            } else {
+                dto.setStockStatus("IN_STOCK");
+            }
+        }, () -> {
+            dto.setAvailableStock(0);
+            dto.setStockStatus("OUT_OF_STOCK");
+        });
+
         return dto;
     }
 

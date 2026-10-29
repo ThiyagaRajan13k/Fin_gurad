@@ -7,6 +7,7 @@ public class InventoryDto {
     private String productName;
     private Integer availableStock;
     private Integer lowStockAlertLevel;
+    private String status;
 
     // Getters and setters
     public Long getId() { return id; }
@@ -21,4 +22,6 @@ public class InventoryDto {
     public void setAvailableStock(Integer availableStock) { this.availableStock = availableStock; }
     public Integer getLowStockAlertLevel() { return lowStockAlertLevel; }
     public void setLowStockAlertLevel(Integer lowStockAlertLevel) { this.lowStockAlertLevel = lowStockAlertLevel; }
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 }

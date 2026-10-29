@@ -13,6 +13,8 @@ public class ProductDto {
     private BigDecimal gstPercentage;
     private String unit;
     private String status;
+    private Integer availableStock = 0;
+    private String stockStatus = "IN_STOCK";
 
     // Getters and setters
     public Long getId() { return id; }
@@ -35,4 +37,9 @@ public class ProductDto {
     public void setUnit(String unit) { this.unit = unit; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+
+    public Integer getAvailableStock() { return availableStock; }
+    public void setAvailableStock(Integer availableStock) { this.availableStock = availableStock; }
+    public String getStockStatus() { return stockStatus; }
+    public void setStockStatus(String stockStatus) { this.stockStatus = stockStatus; }
 }

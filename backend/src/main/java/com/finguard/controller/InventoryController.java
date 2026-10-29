@@ -26,6 +26,11 @@ public class InventoryController {
         return ResponseEntity.ok(inventoryService.getAllInventory());
     }
 
+    @GetMapping("/alerts")
+    public ResponseEntity<List<InventoryDto>> getInventoryAlerts() {
+        return ResponseEntity.ok(inventoryService.getInventoryAlerts());
+    }
+
     @GetMapping("/product/{productId}")
     public ResponseEntity<?> getInventoryByProductId(@PathVariable Long productId) {
         try {

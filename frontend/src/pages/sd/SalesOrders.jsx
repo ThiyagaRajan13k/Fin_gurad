@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Card, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip, Button, IconButton, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, TextField, MenuItem, Autocomplete, Grid, Divider } from '@mui/material';
-import { Plus, Eye, Edit, Trash2 } from 'lucide-react';
+import { 
+  Box, Typography, Card, Table, TableBody, TableCell, TableContainer, TableHead, 
+  TableRow, Paper, Chip, Button, IconButton, CircularProgress, Dialog, DialogTitle, 
+  DialogContent, DialogActions, TextField, MenuItem, Autocomplete, Grid, Divider, 
+  Alert, AlertTitle 
+} from '@mui/material';
+import { Plus, Eye, Edit, Trash2, AlertTriangle, PackageX } from 'lucide-react';
 import { getSalesOrders, createSalesOrder, getCustomers, getProducts } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useNotifications } from '../../context/NotificationContext';
 import { motion } from 'framer-motion';
 
 const SalesOrders = () => {
   const { user } = useAuth();
+  const { refreshAlerts } = useNotifications();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -50,7 +57,11 @@ const SalesOrders = () => {
     }
   };
 
-  const handleOpenDialog = () => setOpenDialog(true);
+  const handleOpenDialog = () => {
+    fetchFormData(); // Ensure freshest stock levels when opening dialog
+    setOpenDialog(true);
+  };
+
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setNewOrder({ customerId: null, items: [{ productId: null, quantity: 1 }], remarks: '' });
@@ -77,6 +88,23 @@ const SalesOrders = () => {
   };
 
   const handleCreateOrder = async () => {
+    // Validate out of stock items
+    for (const item of newOrder.items) {
+      if (!item.productId) continue;
+      const product = products.find(p => p.id === item.productId);
+      if (product) {
+        const availableStock = product.availableStock !== undefined ? product.availableStock : 0;
+        if (availableStock <= 0) {
+          alert(`Product '${product.name}' is OUT OF STOCK (0 available) and cannot be ordered.`);
+          return;
+        }
+        if (item.quantity > availableStock) {
+          alert(`Insufficient stock for '${product.name}'. Available: ${availableStock}, Requested: ${item.quantity}.`);
+          return;
+        }
+      }
+    }
+
     try {
       const orderData = {
         customerId: newOrder.customerId,
@@ -92,7 +120,7 @@ const SalesOrders = () => {
       
       const response = await createSalesOrder(orderData);
       if (response.data && (response.data.success || response.status === 200)) {
-        fetchOrders();
+        await Promise.all([fetchOrders(), fetchFormData(), refreshAlerts()]);
         handleCloseDialog();
       } else {
         const msg = response.data?.message || 'Failed to create sales order';
@@ -104,6 +132,13 @@ const SalesOrders = () => {
       alert('Error creating order: ' + errMsg);
     }
   };
+
+  // Check if any product in form is invalid due to stock
+  const hasOutOfStockSelection = newOrder.items.some(item => {
+    if (!item.productId) return false;
+    const prod = products.find(p => p.id === item.productId);
+    return prod && (prod.availableStock <= 0 || item.quantity > prod.availableStock);
+  });
 
   if (loading) {
     return <Box display="flex" justifyContent="center" p={5}><CircularProgress /></Box>;
@@ -130,7 +165,7 @@ const SalesOrders = () => {
               <TableCell>Order #</TableCell>
               <TableCell>Customer</TableCell>
               <TableCell>Date</TableCell>
-              <TableCell>Amount</TableCell>
+              <TableCell align="right">Amount</TableCell>
               <TableCell>Status</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
@@ -168,6 +203,14 @@ const SalesOrders = () => {
         <DialogTitle>Create New Sales Order</DialogTitle>
         <DialogContent dividers>
           <Box display="flex" flexDirection="column" gap={3} pt={1}>
+            
+            {/* Out of Stock Advisory if any inventory item has 0 stock */}
+            {products.some(p => p.availableStock <= 0) && (
+              <Alert severity="warning" icon={<PackageX size={20} />} sx={{ borderRadius: 2 }}>
+                <strong>Stock Notice:</strong> Some products are currently <strong>Out of Stock</strong> (0 units available) and cannot be added to orders until inventory is replenished.
+              </Alert>
+            )}
+
             <Autocomplete
               options={customers}
               getOptionLabel={(option) => option.name}
@@ -178,34 +221,85 @@ const SalesOrders = () => {
 
             <Box>
               <Typography variant="h6" mb={2}>Products</Typography>
-              {newOrder.items.map((item, index) => (
-                <Grid container spacing={2} alignItems="center" mb={2} key={index}>
-                  <Grid item xs={12} sm={7}>
-                    <Autocomplete
-                      options={products}
-                      getOptionLabel={(option) => option.name ? `${option.name} (₹${option.price})` : ''}
-                      isOptionEqualToValue={(option, val) => option.id === val.id}
-                      value={products.find(p => p.id === item.productId) || null}
-                      onChange={(e, newValue) => handleItemChange(index, 'productId', newValue ? newValue.id : null)}
-                      renderInput={(params) => <TextField {...params} label="Select Product" fullWidth />}
-                    />
-                  </Grid>
-                  <Grid item xs={8} sm={3}>
-                    <TextField 
-                      label="Qty" 
-                      type="number" 
-                      value={item.quantity} 
-                      onChange={(e) => handleItemChange(index, 'quantity', parseInt(e.target.value) || 1)} 
-                      fullWidth 
-                    />
-                  </Grid>
-                  <Grid item xs={4} sm={2} textAlign="center">
-                    <IconButton color="error" onClick={() => handleRemoveItem(index)} disabled={newOrder.items.length === 1}>
-                      <Trash2 size={20} />
-                    </IconButton>
-                  </Grid>
-                </Grid>
-              ))}
+              {newOrder.items.map((item, index) => {
+                const selectedProd = products.find(p => p.id === item.productId);
+                const isOos = selectedProd && selectedProd.availableStock <= 0;
+                const isOverStock = selectedProd && selectedProd.availableStock > 0 && item.quantity > selectedProd.availableStock;
+
+                return (
+                  <Box key={index} mb={2} p={1.5} sx={{ border: isOos ? '1px solid #d32f2f' : '1px solid rgba(0,0,0,0.06)', borderRadius: 2, bgcolor: isOos ? 'rgba(211,47,47,0.02)' : 'transparent' }}>
+                    <Grid container spacing={2} alignItems="center">
+                      <Grid item xs={12} sm={7}>
+                        <Autocomplete
+                          options={products}
+                          getOptionLabel={(option) => {
+                            if (!option.name) return '';
+                            const stock = option.availableStock !== undefined ? option.availableStock : 0;
+                            return `${option.name} (₹${option.price}) - ${stock <= 0 ? 'OUT OF STOCK' : `${stock} in stock`}`;
+                          }}
+                          getOptionDisabled={(option) => option.availableStock !== undefined && option.availableStock <= 0}
+                          isOptionEqualToValue={(option, val) => option.id === val.id}
+                          value={selectedProd || null}
+                          onChange={(e, newValue) => {
+                            if (newValue && newValue.availableStock !== undefined && newValue.availableStock <= 0) {
+                              alert(`'${newValue.name}' is OUT OF STOCK (0 available) and cannot be added to an order.`);
+                              return;
+                            }
+                            handleItemChange(index, 'productId', newValue ? newValue.id : null);
+                          }}
+                          renderOption={(props, option) => {
+                            const optionOos = option.availableStock !== undefined && option.availableStock <= 0;
+                            return (
+                              <li {...props} key={option.id} style={{ opacity: optionOos ? 0.6 : 1 }}>
+                                <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
+                                  <span>{option.name} (₹{option.price})</span>
+                                  <Chip 
+                                    label={optionOos ? 'Out of Stock' : `${option.availableStock} in stock`} 
+                                    size="small" 
+                                    color={optionOos ? 'error' : option.availableStock <= 10 ? 'warning' : 'success'}
+                                    sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
+                                  />
+                                </Box>
+                              </li>
+                            );
+                          }}
+                          renderInput={(params) => <TextField {...params} label="Select Product" fullWidth />}
+                        />
+                      </Grid>
+                      <Grid item xs={8} sm={3}>
+                        <TextField 
+                          label="Qty" 
+                          type="number" 
+                          value={item.quantity} 
+                          onChange={(e) => handleItemChange(index, 'quantity', Math.max(1, parseInt(e.target.value) || 1))} 
+                          inputProps={{ min: 1, max: selectedProd ? selectedProd.availableStock : undefined }}
+                          fullWidth 
+                        />
+                      </Grid>
+                      <Grid item xs={4} sm={2} textAlign="center">
+                        <IconButton color="error" onClick={() => handleRemoveItem(index)} disabled={newOrder.items.length === 1}>
+                          <Trash2 size={20} />
+                        </IconButton>
+                      </Grid>
+                    </Grid>
+
+                    {/* In-place warning if product is out of stock */}
+                    {isOos && (
+                      <Alert severity="error" sx={{ mt: 1, py: 0.5 }}>
+                        <strong>Out of Stock:</strong> '{selectedProd.name}' has 0 available units and cannot be ordered. Please remove this product or replenish inventory.
+                      </Alert>
+                    )}
+
+                    {/* Warning if requested quantity exceeds available stock */}
+                    {isOverStock && (
+                      <Alert severity="warning" sx={{ mt: 1, py: 0.5 }}>
+                        <strong>Quantity Warning:</strong> Only {selectedProd.availableStock} units available for '{selectedProd.name}'!
+                      </Alert>
+                    )}
+                  </Box>
+                );
+              })}
+              
               <Button variant="outlined" startIcon={<Plus size={16} />} onClick={handleAddItem} sx={{ mt: 1 }}>
                 Add Another Product
               </Button>
@@ -228,7 +322,7 @@ const SalesOrders = () => {
           <Button 
             onClick={handleCreateOrder} 
             variant="contained" 
-            disabled={!newOrder.customerId || newOrder.items.some(i => !i.productId)}
+            disabled={!newOrder.customerId || newOrder.items.some(i => !i.productId) || hasOutOfStockSelection}
           >
             Create Order
           </Button>
