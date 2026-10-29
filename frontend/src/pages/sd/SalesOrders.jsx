@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { Plus, Eye, Edit, Trash2, AlertTriangle, PackageX } from 'lucide-react';
 import { getSalesOrders, createSalesOrder, getCustomers, getProducts } from '../../services/api';
+import { getAllInventory } from '../../services/inventoryService';
 import { useAuth } from '../../context/AuthContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { motion } from 'framer-motion';
@@ -46,12 +47,42 @@ const SalesOrders = () => {
 
   const fetchFormData = async () => {
     try {
-      const [custRes, prodRes] = await Promise.all([getCustomers(), getProducts()]);
+      const [custRes, prodRes, invRes] = await Promise.all([
+        getCustomers(),
+        getProducts(),
+        getAllInventory().catch(() => [])
+      ]);
+
       if (Array.isArray(custRes.data)) setCustomers(custRes.data);
-      else if (custRes.data.success) setCustomers(custRes.data.data);
-      
-      if (Array.isArray(prodRes.data)) setProducts(prodRes.data);
-      else if (prodRes.data.success) setProducts(prodRes.data.data);
+      else if (custRes.data?.success) setCustomers(custRes.data.data);
+
+      let rawProds = [];
+      if (Array.isArray(prodRes.data)) rawProds = prodRes.data;
+      else if (prodRes.data?.success) rawProds = prodRes.data.data;
+
+      const invList = Array.isArray(invRes) ? invRes : (Array.isArray(invRes?.data) ? invRes.data : []);
+
+      const mergedProducts = rawProds.map(prod => {
+        const inv = invList.find(i => 
+          (i.productId && Number(i.productId) === Number(prod.id)) ||
+          (i.productCode && prod.productCode && i.productCode.toLowerCase() === prod.productCode.toLowerCase()) ||
+          (i.productName && prod.name && i.productName.toLowerCase() === prod.name.toLowerCase())
+        );
+
+        let stock = 100; // Default fallback if not tracked
+        if (inv && inv.availableStock !== undefined && inv.availableStock !== null) {
+          stock = Number(inv.availableStock);
+        } else if (prod.availableStock !== undefined && prod.availableStock !== null) {
+          stock = Number(prod.availableStock);
+        }
+
+        return {
+          ...prod,
+          availableStock: stock
+        };
+      });
+
+      setProducts(mergedProducts);
     } catch (error) {
       console.error("Failed to fetch form data", error);
     }
@@ -93,7 +124,9 @@ const SalesOrders = () => {
       if (!item.productId) continue;
       const product = products.find(p => p.id === item.productId);
       if (product) {
-        const availableStock = product.availableStock !== undefined ? product.availableStock : 0;
+        const availableStock = (product.availableStock !== undefined && product.availableStock !== null)
+          ? Number(product.availableStock)
+          : 100;
         if (availableStock <= 0) {
           alert(`Product '${product.name}' is OUT OF STOCK (0 available) and cannot be ordered.`);
           return;
@@ -137,7 +170,11 @@ const SalesOrders = () => {
   const hasOutOfStockSelection = newOrder.items.some(item => {
     if (!item.productId) return false;
     const prod = products.find(p => p.id === item.productId);
-    return prod && (prod.availableStock <= 0 || item.quantity > prod.availableStock);
+    if (!prod) return false;
+    const stock = (prod.availableStock !== undefined && prod.availableStock !== null)
+      ? Number(prod.availableStock)
+      : 100;
+    return stock <= 0 || item.quantity > stock;
   });
 
   if (loading) {
@@ -205,7 +242,7 @@ const SalesOrders = () => {
           <Box display="flex" flexDirection="column" gap={3} pt={1}>
             
             {/* Out of Stock Advisory if any inventory item has 0 stock */}
-            {products.some(p => p.availableStock <= 0) && (
+            {products.some(p => p.availableStock !== undefined && p.availableStock !== null && p.availableStock <= 0) && (
               <Alert severity="warning" icon={<PackageX size={20} />} sx={{ borderRadius: 2 }}>
                 <strong>Stock Notice:</strong> Some products are currently <strong>Out of Stock</strong> (0 units available) and cannot be added to orders until inventory is replenished.
               </Alert>
@@ -223,8 +260,11 @@ const SalesOrders = () => {
               <Typography variant="h6" mb={2}>Products</Typography>
               {newOrder.items.map((item, index) => {
                 const selectedProd = products.find(p => p.id === item.productId);
-                const isOos = selectedProd && selectedProd.availableStock <= 0;
-                const isOverStock = selectedProd && selectedProd.availableStock > 0 && item.quantity > selectedProd.availableStock;
+                const prodStock = selectedProd && (selectedProd.availableStock !== undefined && selectedProd.availableStock !== null)
+                  ? Number(selectedProd.availableStock)
+                  : 100;
+                const isOos = selectedProd && prodStock <= 0;
+                const isOverStock = selectedProd && prodStock > 0 && item.quantity > prodStock;
 
                 return (
                   <Box key={index} mb={2} p={1.5} sx={{ border: isOos ? '1px solid #d32f2f' : '1px solid rgba(0,0,0,0.06)', borderRadius: 2, bgcolor: isOos ? 'rgba(211,47,47,0.02)' : 'transparent' }}>
@@ -234,29 +274,30 @@ const SalesOrders = () => {
                           options={products}
                           getOptionLabel={(option) => {
                             if (!option.name) return '';
-                            const stock = option.availableStock !== undefined ? option.availableStock : 0;
+                            const stock = (option.availableStock !== undefined && option.availableStock !== null) ? Number(option.availableStock) : 100;
                             return `${option.name} (₹${option.price}) - ${stock <= 0 ? 'OUT OF STOCK' : `${stock} in stock`}`;
                           }}
-                          getOptionDisabled={(option) => option.availableStock !== undefined && option.availableStock <= 0}
+                          getOptionDisabled={(option) => option.availableStock !== undefined && option.availableStock !== null && option.availableStock <= 0}
                           isOptionEqualToValue={(option, val) => option.id === val.id}
                           value={selectedProd || null}
                           onChange={(e, newValue) => {
-                            if (newValue && newValue.availableStock !== undefined && newValue.availableStock <= 0) {
+                            if (newValue && newValue.availableStock !== undefined && newValue.availableStock !== null && newValue.availableStock <= 0) {
                               alert(`'${newValue.name}' is OUT OF STOCK (0 available) and cannot be added to an order.`);
                               return;
                             }
                             handleItemChange(index, 'productId', newValue ? newValue.id : null);
                           }}
                           renderOption={(props, option) => {
-                            const optionOos = option.availableStock !== undefined && option.availableStock <= 0;
+                            const stock = (option.availableStock !== undefined && option.availableStock !== null) ? Number(option.availableStock) : 100;
+                            const optionOos = stock <= 0;
                             return (
                               <li {...props} key={option.id} style={{ opacity: optionOos ? 0.6 : 1 }}>
                                 <Box display="flex" justifyContent="space-between" width="100%" alignItems="center">
                                   <span>{option.name} (₹{option.price})</span>
                                   <Chip 
-                                    label={optionOos ? 'Out of Stock' : `${option.availableStock} in stock`} 
+                                    label={optionOos ? 'Out of Stock' : `${stock} in stock`} 
                                     size="small" 
-                                    color={optionOos ? 'error' : option.availableStock <= 10 ? 'warning' : 'success'}
+                                    color={optionOos ? 'error' : stock <= 10 ? 'warning' : 'success'}
                                     sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
                                   />
                                 </Box>
@@ -272,7 +313,7 @@ const SalesOrders = () => {
                           type="number" 
                           value={item.quantity} 
                           onChange={(e) => handleItemChange(index, 'quantity', Math.max(1, parseInt(e.target.value) || 1))} 
-                          inputProps={{ min: 1, max: selectedProd ? selectedProd.availableStock : undefined }}
+                          inputProps={{ min: 1, max: selectedProd ? prodStock : undefined }}
                           fullWidth 
                         />
                       </Grid>
@@ -293,7 +334,7 @@ const SalesOrders = () => {
                     {/* Warning if requested quantity exceeds available stock */}
                     {isOverStock && (
                       <Alert severity="warning" sx={{ mt: 1, py: 0.5 }}>
-                        <strong>Quantity Warning:</strong> Only {selectedProd.availableStock} units available for '{selectedProd.name}'!
+                        <strong>Quantity Warning:</strong> Only {prodStock} units available for '{selectedProd.name}'!
                       </Alert>
                     )}
                   </Box>
